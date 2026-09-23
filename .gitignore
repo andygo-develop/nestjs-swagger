@@ -1,0 +1,8 @@
+node_modules
+dist
+*.log
+.env
+.env.*
+.idea
+coverage
+.claude/settings.local.json

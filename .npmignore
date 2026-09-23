@@ -1,0 +1,13 @@
+src
+tests
+examples
+tsconfig.json
+tsconfig.test.json
+tsconfig.examples.json
+.gitignore
+node_modules
+*.log
+.env
+.env.*
+.idea
+eslint.config.mjs
