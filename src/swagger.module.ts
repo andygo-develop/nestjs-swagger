@@ -14,6 +14,7 @@ import { parseSwaggerUri, TSwaggerConfig } from './configs/swagger.config';
 import { SWAGGER_MODULE_OPTIONS } from './constants/swagger.constants';
 import { swaggerBootstrap } from './swagger.bootstrap';
 import { TSwaggerModuleOptions } from './types/swagger-module-options.type';
+import { routeUnderGlobalPrefix } from './utils/global-prefix';
 
 /**
  * Mounts the Swagger UI behind basic auth, so an application only has to
@@ -25,7 +26,9 @@ import { TSwaggerModuleOptions } from './types/swagger-module-options.type';
  * - `configure()`, like Bull Board's root module: basic auth goes through the
  *   middleware consumer, and URI versioning is switched on via the injected
  *   `ApplicationConfig`. Both must happen before the router registers
- *   controller routes, or versioning never reaches them.
+ *   controller routes, or versioning never reaches them. The URI path is
+ *   absolute (global prefix included), and Nest prefixes middleware routes
+ *   itself, so the guard gets it relative to the prefix.
  * - `onModuleInit()`: `@nestjs/swagger` scans the application's own module
  *   container and serves static assets through the app itself, so the
  *   document needs the built app, read here from `options.getApp()`. This is
@@ -52,6 +55,10 @@ export class SwaggerModule implements NestModule, OnModuleInit {
 
   configure(consumer: MiddlewareConsumer) {
     const { prefix, userName, userPassword } = this.config;
+    const route = routeUnderGlobalPrefix(
+      prefix,
+      this.applicationConfig.getGlobalPrefix(),
+    );
 
     this.applicationConfig.enableVersioning({ type: VersioningType.URI });
 
@@ -61,7 +68,7 @@ export class SwaggerModule implements NestModule, OnModuleInit {
       .apply(
         basicAuth({ challenge: true, users: { [userName]: userPassword } }),
       )
-      .forRoutes(prefix, `${prefix}-json`, `${prefix}-yaml`);
+      .forRoutes(route, `${route}-json`, `${route}-yaml`);
   }
 
   onModuleInit() {
@@ -78,6 +85,7 @@ export class SwaggerModule implements NestModule, OnModuleInit {
 
     swaggerBootstrap(app, {
       prefix: this.config.prefix,
+      globalPrefix: this.applicationConfig.getGlobalPrefix(),
       versions,
       title,
       description,

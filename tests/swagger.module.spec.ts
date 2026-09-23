@@ -11,6 +11,8 @@ const URI = `swagger://${AUTH.user}:${AUTH.pass}@api/docs`;
 
 async function createApp(
   options: Omit<TSwaggerModuleOptions, 'getApp'> = {},
+  globalPrefix?: string,
+  exclude?: string[],
 ): Promise<NestExpressApplication> {
   const holder: { app?: NestExpressApplication } = {};
 
@@ -31,6 +33,9 @@ async function createApp(
   });
 
   holder.app = app;
+  if (globalPrefix !== undefined) {
+    app.setGlobalPrefix(globalPrefix, { exclude });
+  }
   await app.init();
 
   return app;
@@ -135,5 +140,84 @@ describe('SwaggerModule', () => {
     });
 
     await expect(app.init()).rejects.toThrow(/getApp\(\) returned undefined/);
+  });
+
+  describe('under a global prefix', () => {
+    const PREFIXED_URI = `swagger://${AUTH.user}:${AUTH.pass}@api/api/docs`;
+
+    it('guards the ui and both documents at the absolute uri path', async () => {
+      app = await createApp({ uri: PREFIXED_URI }, 'api');
+      const server = app.getHttpServer();
+
+      for (const path of ['/api/docs', '/api/docs-json', '/api/docs-yaml']) {
+        await request(server).get(path).expect(401);
+        await request(server).get(path).auth(AUTH.user, AUTH.pass).expect(200);
+      }
+      // Nest prefixes middleware routes itself; handing it the absolute path
+      // would move the guard here and leave the docs above open.
+      await request(server)
+        .get('/api/api/docs')
+        .auth(AUTH.user, AUTH.pass)
+        .expect(404);
+    });
+
+    it('accepts the prefix with a leading slash', async () => {
+      app = await createApp({ uri: PREFIXED_URI }, '/api/');
+
+      await request(app.getHttpServer()).get('/api/docs-json').expect(401);
+    });
+
+    it('rejects a uri path outside the global prefix', async () => {
+      await expect(createApp({ uri: URI }, 'api')).rejects.toThrow(
+        'Swagger path "/docs" must be under the global prefix "/api"',
+      );
+    });
+
+    it('rejects a uri path equal to the global prefix', async () => {
+      await expect(
+        createApp({ uri: `swagger://${AUTH.user}:${AUTH.pass}@api/api` }, 'api'),
+      ).rejects.toThrow(
+        'Swagger path "/api" must be under the global prefix "/api"',
+      );
+    });
+
+    it('reads the version of routes excluded from the prefix', async () => {
+      app = await createApp(
+        { uri: PREFIXED_URI, versions: [1, 2] },
+        'api',
+        ['pets/legacy'],
+      );
+
+      const { body } = await request(app.getHttpServer())
+        .get('/api/docs/docs/v2')
+        .auth(AUTH.user, AUTH.pass)
+        .expect(200);
+
+      expect(Object.keys(body.paths).sort()).toEqual([
+        '/api/v1/pets',
+        '/api/v2/pets',
+        '/v1/pets/legacy',
+      ]);
+      expect(body.paths['/v1/pets/legacy'].get.summary).toMatch(
+        /\(Version: v1\)$/,
+      );
+    });
+
+    it('still carries older routes forward per version', async () => {
+      app = await createApp({ uri: PREFIXED_URI, versions: [1, 2] }, 'api');
+
+      const { body } = await request(app.getHttpServer())
+        .get('/api/docs/docs/v2')
+        .auth(AUTH.user, AUTH.pass)
+        .expect(200);
+
+      expect(Object.keys(body.paths).sort()).toEqual([
+        '/api/v1/pets',
+        '/api/v1/pets/legacy',
+        '/api/v2/pets',
+      ]);
+      expect(Object.keys(body.paths['/api/v1/pets'])).toEqual(['post']);
+      expect(Object.keys(body.paths['/api/v2/pets'])).toEqual(['get']);
+    });
   });
 });
