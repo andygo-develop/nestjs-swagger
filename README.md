@@ -71,6 +71,19 @@ SWAGGER_URI=swagger://admin:s3cret@api/docs
 The credentials guard the docs; the pathname is the mount prefix. Percent-encode
 special characters in credentials (`p%40ss` → `p@ss`).
 
+### Global prefix
+
+The URI's path is **absolute**, global prefix included. With
+`app.setGlobalPrefix('api')`:
+
+```bash
+SWAGGER_URI=swagger://admin:s3cret@api/api/docs   # → /api/docs, /api/docs-json, /api/docs-yaml
+```
+
+A path outside the prefix (`/docs` under `api`), or the prefix itself, fails at
+startup: Nest adds the prefix to every middleware route, so basic auth could not
+reach it. Call `setGlobalPrefix()` before `app.init()` / `app.listen()`.
+
 ## Options
 
 ```ts

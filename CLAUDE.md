@@ -32,7 +32,7 @@ npx jest tests/swagger.module.spec.ts
 
 `SwaggerModule` splits its work by what each step needs, in the order `app.init()` runs them (registerModules → registerRouter → onModuleInit → 404 handler):
 
-- `configure()` — basic auth via the middleware consumer, and `enableVersioning` via the injected `ApplicationConfig`. Must run before the router registers routes.
+- `configure()` — basic auth via the middleware consumer, and `enableVersioning` via the injected `ApplicationConfig`. Must run before the router registers routes. The URI path is absolute (global prefix included) but Nest prefixes middleware routes itself, so `routeUnderGlobalPrefix()` (`src/utils/global-prefix.ts`) hands the consumer the path relative to the prefix, and throws for a path outside it (or equal to it).
 - `onModuleInit()` — `@nestjs/swagger` needs the built app to scan and to serve static assets, so the app is read from `options.getApp()` here. Last point where routes can be added before the 404 handler.
 
 `getApp` is a getter because `@Module({ imports })` is evaluated before `NestFactory.create()` returns.
@@ -40,7 +40,7 @@ npx jest tests/swagger.module.spec.ts
 ### `swagger.bootstrap.ts`
 
 - `prepareDoc` / `getSchemaExamples` — expand `discriminator` schemas into one named example per variant (Swagger UI renders only one example per media type). Keys look like `prop=value:prop2=value2`.
-- `filterRoutesByVersion` — per `method + route`, the highest version ≤ requested wins (initial document: the earliest). Selection is per operation, and each operation keeps its real path (`/v1/...`) so "Try it out" works. Summaries get a `(Version: vN)` suffix once, tracked in a `WeakMap`.
+- `filterRoutesByVersion` — reads the version segment right after the global prefix (`/api/v1/...`, prefix optional for excluded routes); per `method + route`, the highest version ≤ requested wins (initial document: the earliest). Selection is per operation, and each operation keeps its real path (`/v1/...`) so "Try it out" works. Summaries get a `(Version: vN)` suffix once, tracked in a `WeakMap`.
 
 ### Test structure
 

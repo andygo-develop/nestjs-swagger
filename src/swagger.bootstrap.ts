@@ -20,10 +20,16 @@ import type {
 } from 'openapi3-ts/oas30';
 
 import { parseSwaggerUri } from './configs/swagger.config';
+import { escapeRegExp, normalizeGlobalPrefix } from './utils/global-prefix';
 
 export type TSwaggerBootstrapOptions = {
   /** Mount prefix. Defaults to the pathname of `SWAGGER_URI`. */
   prefix?: string;
+  /**
+   * Nest's global prefix, stripped before reading a route's version. Defaults
+   * to the app's own, read the same way `@nestjs/swagger` does.
+   */
+  globalPrefix?: string;
   /** API versions to list in the definition switcher. */
   versions?: number[];
   title?: string;
@@ -318,11 +324,15 @@ function prepareDoc(document: OpenAPIObject): OpenAPIObject {
  */
 function filterRoutesByVersion(
   document: OpenAPIObject,
+  globalPrefix: string,
   skipDeprecated = false,
   version = -1,
 ) {
   const doc = { ...document };
-  const regEx = /^\/v([0-9]+)\//;
+  // Document paths carry the global prefix (`/api/v1/pets`); the version
+  // segment comes right after it. The prefix is optional, since routes in
+  // `setGlobalPrefix(..., { exclude })` are served without it (`/v1/health`).
+  const regEx = new RegExp(`^(${escapeRegExp(globalPrefix)})?/v([0-9]+)/`);
   // Keyed by `method route`, so each operation is picked on its own: a route
   // can take its GET from v2 and its POST from v1.
   const operationsByKey = new Map<
@@ -339,9 +349,9 @@ function filterRoutesByVersion(
   for (const [route, pathItemObject] of Object.entries(
     <PathsObject>(<unknown>doc.paths),
   )) {
-    const [, vStr] = route.match(regEx) ?? [];
+    const [, , vStr] = route.match(regEx) ?? [];
     const v = vStr === undefined ? -1 : parseInt(vStr, 10);
-    const routeWithoutVersion = route.replace(regEx, '/');
+    const routeWithoutVersion = route.replace(regEx, '$1/');
 
     for (const [method, operationObject] of Object.entries(
       <PathItemObject>pathItemObject,
@@ -407,6 +417,8 @@ export function swaggerBootstrap(
   app: NestExpressApplication,
   {
     prefix = parseSwaggerUri().prefix,
+    globalPrefix = (<{ config?: { getGlobalPrefix(): string } }>(<unknown>app))
+      .config?.getGlobalPrefix() ?? '',
     versions = [],
     title = 'API',
     description,
@@ -414,6 +426,7 @@ export function swaggerBootstrap(
     customOptions = {},
   }: TSwaggerBootstrapOptions = {},
 ) {
+  const normalizedGlobalPrefix = normalizeGlobalPrefix(globalPrefix);
   const builder = new DocumentBuilder()
     .setTitle(`${title} v${version}`)
     .setDescription(description ?? `${title} v${version}`)
@@ -446,13 +459,27 @@ export function swaggerBootstrap(
       });
       expressApp.get(`${url}-without-deprecated`, <any>(
         ((_req: Request, res: Response) =>
-          res.json(filterRoutesByVersion(document, true, version)))
+          res.json(
+            filterRoutesByVersion(
+              document,
+              normalizedGlobalPrefix,
+              true,
+              version,
+            ),
+          ))
       ));
 
       urls.push({ url, name: `API v${version}` });
       expressApp.get(url, <any>(
         ((_req: Request, res: Response) =>
-          res.json(filterRoutesByVersion(document, false, version)))
+          res.json(
+            filterRoutesByVersion(
+              document,
+              normalizedGlobalPrefix,
+              false,
+              version,
+            ),
+          ))
       ));
     }
 
@@ -464,13 +491,13 @@ export function swaggerBootstrap(
     });
     expressApp.get(`${url}-without-deprecated`, <any>(
       ((_req: Request, res: Response) =>
-        res.json(filterRoutesByVersion(document, true)))
+        res.json(filterRoutesByVersion(document, normalizedGlobalPrefix, true)))
     ));
 
     urls.push({ url, name: 'API Initial' });
     expressApp.get(url, <any>(
       ((_req: Request, res: Response) =>
-        res.json(filterRoutesByVersion(document)))
+        res.json(filterRoutesByVersion(document, normalizedGlobalPrefix)))
     ));
 
     swaggerCustomOptions.swaggerOptions ??= {};
