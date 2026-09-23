@@ -1,6 +1,6 @@
 {
   "name": "@andygo.dev/nestjs-swagger",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Drop-in NestJS Swagger module: basic-auth-protected UI, per-version documents and discriminator examples, configured from a single URI.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
